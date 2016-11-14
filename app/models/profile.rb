@@ -13,25 +13,12 @@ class Profile < ActiveRecord::Base
   extract_tags_from :tag_string
   validates :tag_list, :length => { :maximum => 5 }
 
-  xml_attr :diaspora_handle
-  xml_attr :first_name
-  xml_attr :last_name
-  xml_attr :image_url
-  xml_attr :image_url_small
-  xml_attr :image_url_medium
-  xml_attr :birthday
-  xml_attr :gender
-  xml_attr :bio
-  xml_attr :location
-  xml_attr :searchable
-  xml_attr :nsfw
-  xml_attr :tag_string
-
   before_save :strip_names
   after_validation :strip_names
 
   validates :first_name, :length => { :maximum => 32 }
   validates :last_name, :length => { :maximum => 32 }
+  validates :location, :length => { :maximum =>255 }
 
   validates_format_of :first_name, :with => /\A[^;]+\z/, :allow_blank => true
   validates_format_of :last_name, :with => /\A[^;]+\z/, :allow_blank => true
@@ -41,6 +28,7 @@ class Profile < ActiveRecord::Base
   belongs_to :person
   before_validation do
     self.tag_string = self.tag_string.split[0..4].join(' ')
+    self.build_tags
   end
 
   before_save do
@@ -48,17 +36,8 @@ class Profile < ActiveRecord::Base
     self.construct_full_name
   end
 
-  def subscribers(user)
-    Person.joins(:contacts).where(:contacts => {:user_id => user.id})
-  end
-
-  def receive(user, person)
-    person.reload # make sure to have old profile referenced
-    Rails.logger.info("event=receive payload_type=profile sender=#{person} to=#{user}")
-    profiles_attr = self.attributes.merge('tag_string' => self.tag_string).slice('diaspora_handle', 'first_name', 'last_name', 'image_url', 'image_url_small', 'image_url_medium', 'birthday', 'gender', 'bio', 'location', 'searchable', 'nsfw', 'tag_string')
-    person.profile.update_attributes(profiles_attr)
-
-    person.profile
+  def subscribers
+    Person.joins(:contacts).where(contacts: {user_id: person.owner_id})
   end
 
   def diaspora_handle
@@ -66,7 +45,7 @@ class Profile < ActiveRecord::Base
     (self.person) ? self.person.diaspora_handle : self[:diaspora_handle]
   end
 
-  def image_url(size = :thumb_large)
+  def image_url(size=:thumb_large)
     result = if size == :thumb_medium && self[:image_url_medium]
                self[:image_url_medium]
              elsif size == :thumb_small && self[:image_url_small]
@@ -74,7 +53,16 @@ class Profile < ActiveRecord::Base
              else
                self[:image_url]
              end
-    result || ActionController::Base.helpers.image_path('user/default.png')
+
+    if result
+      if AppConfig.privacy.camo.proxy_remote_pod_images?
+        Diaspora::Camo.image_url(result)
+      else
+        result
+      end
+    else
+      ActionController::Base.helpers.image_path("user/default.png")
+    end
   end
 
   def from_omniauth_hash(omniauth_user_hash)
@@ -89,48 +77,33 @@ class Profile < ActiveRecord::Base
     self.attributes.merge(update_hash){|key, old, new| old.blank? ? new : old}
   end
 
-  def image_url= url
-    return image_url if url == ''
-    if url.nil? || url.match(/^https?:\/\//)
-      super(url)
-    else
-      super(absolutify_local_url(url))
-    end
+  def image_url=(url)
+    super(build_image_url(url))
   end
 
-  def image_url_small= url
-    return image_url if url == ''
-    if url.nil? || url.match(/^https?:\/\//)
-      super(url)
-    else
-      super(absolutify_local_url(url))
-    end
+  def image_url_small=(url)
+    super(build_image_url(url))
   end
 
-  def image_url_medium= url
-    return image_url if url == ''
-    if url.nil? || url.match(/^https?:\/\//)
-      super(url)
-    else
-      super(absolutify_local_url(url))
-    end
+  def image_url_medium=(url)
+    super(build_image_url(url))
   end
 
   def date= params
-    if ['month', 'day'].all? { |key| params[key].present?  }
-      params['year'] = '1000' if params['year'].blank?
-      if Date.valid_civil?(params['year'].to_i, params['month'].to_i, params['day'].to_i)
-        self.birthday = Date.new(params['year'].to_i, params['month'].to_i, params['day'].to_i)
+    if %w(month day).all? {|key| params[key].present? }
+      params["year"] = "1004" if params["year"].blank?
+      if Date.valid_civil?(params["year"].to_i, params["month"].to_i, params["day"].to_i)
+        self.birthday = Date.new(params["year"].to_i, params["month"].to_i, params["day"].to_i)
       else
         @invalid_birthday_date = true
       end
-    elsif [ 'year', 'month', 'day'].all? { |key| params[key].blank? }
+    elsif %w(year month day).all? {|key| params[key].blank? }
       self.birthday = nil
     end
   end
 
   def formatted_birthday
-    birthday.to_s(:long).gsub(', 1000', '') if birthday.present?
+    birthday.to_s(:long).gsub(/, 100[0|4]/, "") if birthday.present?
   end
 
   def bio_message
@@ -142,12 +115,7 @@ class Profile < ActiveRecord::Base
   end
 
   def tag_string
-    if @tag_string
-      @tag_string
-    else
-      tags = self.tags.pluck(:name)
-      tags.inject(""){|string, tag| string << "##{tag} " }
-    end
+    @tag_string ||= tags.pluck(:name).map {|tag| "##{tag}" }.join(" ")
   end
 
   # Constructs a full name by joining #first_name and #last_name
@@ -190,7 +158,9 @@ class Profile < ActiveRecord::Base
     self.attributes.keys - ["id", "created_at", "updated_at", "person_id"]
   end
 
-  def absolutify_local_url url
-    "#{AppConfig.pod_uri.to_s.chomp("/")}#{url}"
+  def build_image_url(url)
+    return nil if url.blank? || url.match(/user\/default/)
+    return url if url.match(/^https?:\/\//)
+    "#{AppConfig.pod_uri.to_s.chomp('/')}#{url}"
   end
 end

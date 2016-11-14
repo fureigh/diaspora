@@ -2,11 +2,9 @@
 #   licensed under the Affero General Public License version 3 or later.  See
 #   the COPYRIGHT file.
 
-require 'spec_helper'
+require "spec_helper"
 
-describe PasswordsController, :type => :controller do
-  include Devise::TestHelpers
-
+describe Devise::PasswordsController, type: :controller do
   before do
     @request.env["devise.mapping"] = Devise.mappings[:user]
   end

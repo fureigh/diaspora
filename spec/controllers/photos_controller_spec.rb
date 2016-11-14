@@ -9,7 +9,7 @@ describe PhotosController, :type => :controller do
     @alices_photo = alice.post(:photo, :user_file => uploaded_photo, :to => alice.aspects.first.id, :public => false)
     @bobs_photo = bob.post(:photo, :user_file => uploaded_photo, :to => bob.aspects.first.id, :public => true)
 
-    sign_in :user, alice
+    sign_in alice, scope: :user
     request.env["HTTP_REFERER"] = ''
   end
 
@@ -82,6 +82,16 @@ describe PhotosController, :type => :controller do
       expect(response).to be_success
     end
 
+    it "succeeds on mobile devices without any available pictures" do
+      get :index, format: :mobile, person_id: FactoryGirl.create(:person).guid.to_s
+      expect(response).to be_success
+    end
+
+    it "succeeds on mobile devices with available pictures" do
+      get :index, format: :mobile, person_id: bob.person.guid.to_s
+      expect(response).to be_success
+    end
+
     it "displays the logged in user's pictures" do
       get :index, :person_id => alice.person.guid.to_s
       expect(assigns[:person]).to eq(alice.person)
@@ -94,12 +104,23 @@ describe PhotosController, :type => :controller do
       expect(assigns[:posts]).to eq([@bobs_photo])
     end
 
+    it "displays the correct number of photos" do
+      16.times do |i|
+        eve.post(:photo, :user_file => uploaded_photo, :to => eve.aspects.first.id, :public => true)
+      end
+      get :index, :person_id => eve.person.to_param
+      expect(response.body).to include ',"photos_count":16'
+
+      eve.post(:photo, :user_file => uploaded_photo, :to => eve.aspects.first.id, :public => false)
+      get :index, :person_id => eve.person.to_param
+      expect(response.body).to include ',"photos_count":16' # eve is not sharing with alice
+    end
+
     it "returns json when requested" do
       request.env['HTTP_ACCEPT'] = 'application/json'
       get :index, :person_id => alice.person.guid.to_s
 
       expect(response.headers['Content-Type']).to match 'application/json.*'
-      save_fixture(response.body, "photos_json")
     end
 
     it 'displays by date of creation' do
@@ -109,17 +130,48 @@ describe PhotosController, :type => :controller do
 
       expect(assigns[:posts]).to be_empty
     end
-  end
 
-  describe '#edit' do
-    it "succeeds when user owns the photo" do
-      get :edit, :id => @alices_photo.id
-      expect(response).to be_success
-    end
+    context "with no user signed in" do
+      before do
+        sign_out :user
+        @person = bob.person
+      end
 
-    it "redirects when the user does not own the photo" do
-      get :edit, :id => @bobs_photo.id
-      expect(response).to redirect_to(:action => :index, :person_id => alice.person.guid.to_s)
+      it "succeeds" do
+        get :index, person_id: @person.to_param
+        expect(response.status).to eq(200)
+      end
+
+      it "succeeds on the mobile site" do
+        get :index, person_id: @person.to_param, format: :mobile
+        expect(response).to be_success
+      end
+
+      it "forces to sign in if the person is remote" do
+        p = FactoryGirl.create(:person)
+
+        get :index, person_id: p.to_param
+        expect(response).to be_redirect
+        expect(response).to redirect_to new_user_session_path
+      end
+
+      it "displays the correct number of photos" do
+        16.times do
+          eve.post(:photo, user_file: uploaded_photo, to: eve.aspects.first.id, public: true)
+        end
+        get :index, person_id: eve.person.to_param
+        expect(response.body).to include ',"photos_count":16'
+
+        eve.post(:photo, user_file: uploaded_photo, to: eve.aspects.first.id, public: false)
+        get :index, person_id: eve.person.to_param
+        expect(response.body).to include ',"photos_count":16'
+      end
+
+      it "displays a person's pictures" do
+        get :index, person_id: bob.person.guid.to_s
+        expect(assigns[:person]).to eq(bob.person)
+        expect(assigns[:posts]).to eq([@bobs_photo])
+      end
     end
   end
 
@@ -150,33 +202,6 @@ describe PhotosController, :type => :controller do
       eves_photo = eve.post(:photo, :user_file => uploaded_photo, :to => eve.aspects.first.id, :public => true)
       delete :destroy, :id => eves_photo.id
       expect(Photo.find_by_id(eves_photo.id)).to be_truthy
-    end
-  end
-
-  describe "#update" do
-    it "updates the caption of a photo" do
-      put :update, :id => @alices_photo.id, :photo => { :text => "now with lasers!" }, :format => :js
-      expect(@alices_photo.reload.text).to eq("now with lasers!")
-    end
-
-    it "doesn't allow mass assignment of person" do
-      new_user = FactoryGirl.create(:user)
-      params = { :text => "now with lasers!", :author => new_user }
-      put :update, :id => @alices_photo.id, :photo => params, :format => :js
-      expect(@alices_photo.reload.author).to eq(alice.person)
-    end
-
-    it "doesn't allow mass assignment of person_id" do
-      new_user = FactoryGirl.create(:user)
-      params = { :text => "now with lasers!", :author_id => new_user.id }
-      put :update, :id => @alices_photo.id, :photo => params, :format => :js
-      expect(@alices_photo.reload.author_id).to eq(alice.person.id)
-    end
-
-    it 'redirects if you do not have access to the post' do
-      params = { :text => "now with lasers!" }
-      put :update, :id => @bobs_photo.id, :photo => params
-      expect(response).to redirect_to(:action => :index, :person_id => alice.person.guid.to_s)
     end
   end
 

@@ -5,7 +5,8 @@
 class StreamsController < ApplicationController
   before_action :authenticate_user!
   before_action :save_selected_aspects, :only => :aspects
-  before_action :redirect_unless_admin, :only => :public
+
+  layout proc { request.format == :mobile ? "application" : "with_header" }
 
   respond_to :html,
              :mobile,
@@ -27,7 +28,8 @@ class StreamsController < ApplicationController
   end
 
   def multi
-      stream_responder(Stream::Multi)
+    gon.preloads[:getting_started] = current_user.getting_started
+    stream_responder(Stream::Multi)
   end
 
   def commented
@@ -50,6 +52,7 @@ class StreamsController < ApplicationController
   private
 
   def stream_responder(stream_klass=nil)
+
     if stream_klass.present?
       @stream ||= stream_klass.new(current_user, :max_time => max_time)
     end

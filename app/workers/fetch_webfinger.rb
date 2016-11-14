@@ -4,13 +4,13 @@
 
 module Workers
   class FetchWebfinger < Base
-    sidekiq_options queue: :socket_webfinger
+    sidekiq_options queue: :urgent
 
     def perform(account)
-      person = Webfinger.new(account).fetch
+      person = Person.find_or_fetch_by_identifier(account)
 
       # also, schedule to fetch a few public posts from that person
-      Workers::FetchPublicPosts.perform_async(person.diaspora_handle) unless person.nil?
+      Diaspora::Fetcher::Public.queue_for(person) unless person.nil?
     end
   end
 end

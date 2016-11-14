@@ -1,6 +1,7 @@
 require 'spec_helper'
 
 describe OpenGraphHelper, :type => :helper do
+
   describe 'og_html' do
     scenarios = {
       "article" => {

@@ -1,16 +1,17 @@
-require 'spec_helper'
+require "spec_helper"
 
-
-describe NotificationsHelper, :type => :helper do
+describe NotificationsHelper, type: :helper do
   include ApplicationHelper
 
   before do
     @user = FactoryGirl.create(:user)
     @person = FactoryGirl.create(:person)
-    @post = FactoryGirl.create(:status_message, :author => @user.person)
+    @post = FactoryGirl.create(:status_message, author: @user.person)
     @person2 = FactoryGirl.create(:person)
-    @notification = Notification.notify(@user, FactoryGirl.create(:like, :author => @person, :target => @post), @person)
-    @notification =  Notification.notify(@user, FactoryGirl.create(:like, :author => @person2, :target => @post), @person2)
+    Notifications::Liked.notify(FactoryGirl.create(:like, author: @person, target: @post), [])
+    Notifications::Liked.notify(FactoryGirl.create(:like, author: @person2, target: @post), [])
+
+    @notification = Notifications::Liked.find_by(target: @post, recipient: @user)
   end
 
   describe '#notification_people_link' do
@@ -64,7 +65,6 @@ describe NotificationsHelper, :type => :helper do
     end
   end
 
-
   describe '#object_link' do
     describe 'for a like' do
       it 'should include a link to the post' do
@@ -91,6 +91,25 @@ describe NotificationsHelper, :type => :helper do
           expect(object_link(@notification,  notification_people_link(@notification))).to eq(t('notifications.liked_post_deleted.one', :actors => notification_people_link(@notification)))
         end
       end
+    end
+  end
+
+  describe '#display_year?' do
+    it 'returns false if year is nil and the date includes the current year' do
+      expect(display_year?(nil,Date.current.strftime('%Y-%m-%d'))).to be_falsey
+    end
+
+    it 'returns true if year is nil and the date does not include the current year' do
+      expect(display_year?(nil,'1900-12-31')).to be_truthy
+    end
+
+    it 'returns false if the date includes the given year' do
+      expect(display_year?(2015,'2015-12-31')).to be_falsey
+    end
+
+    it 'returns true if the date does not include the given year' do
+      expect(display_year?(2015,'2014-12-31')).to be_truthy
+      expect(display_year?(2015,'2016-12-31')).to be_truthy
     end
   end
 end

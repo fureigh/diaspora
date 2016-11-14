@@ -8,7 +8,12 @@ module NotificationMailers
 
       if mail?
         @headers[:from] = "\"#{@comment.author_name} (diaspora*)\" <#{AppConfig.mail.sender_address}>"
-        @headers[:subject] = "Re: #{@comment.comment_email_subject}"
+        @headers[:in_reply_to] = @headers[:references] = "<#{@comment.parent.guid}@#{AppConfig.pod_uri.host}>"
+        if @comment.public?
+          @headers[:subject] = "Re: #{@comment.comment_email_subject}"
+        else
+          @headers[:subject] = I18n.t("notifier.also_commented.limited_subject")
+        end
       end
     end
 

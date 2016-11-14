@@ -1,6 +1,9 @@
 class AdminsController < Admin::AdminController
+  include ApplicationHelper
 
-  use_bootstrap_for :user_search, :weekly_user_stats, :stats, :correlations
+  def dashboard
+    gon.push(pod_version: pod_version)
+  end
 
   def user_search
     if params[:admins_controller_user_search]
@@ -41,7 +44,7 @@ class AdminsController < Admin::AdminController
       @created_users_by_week[week] << u.username
     end
 
-    @selected_week = params[:week] || @created_users_by_week.keys.first
+    @selected_week = params[:week] || @created_users_by_week.keys.last
     @counter = @created_users_by_week[@selected_week].count
   end
 
@@ -75,10 +78,6 @@ class AdminsController < Admin::AdminController
     #@posts[:new_public] = Post.where(:type => ['StatusMessage','ActivityStreams::Photo'],
     #                                 :public => true).order('created_at DESC').limit(15).all
 
-  end
-
-  def correlations
-    @correlations_hash = Statistics.new.generate_correlations
   end
 
   private

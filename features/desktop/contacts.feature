@@ -13,8 +13,8 @@ Feature: show contacts
 
   Scenario: see own contacts on profile
     When I am on "robert@grimm.grimm"'s page
-    And I press the first "a" within ".section.contact_pictures"
-    Then I should see "Alice Smith"
+    And I press the first "#contacts_link"
+    Then I should be on the contacts page
 
   Scenario: see contacts of a visible aspect list
     When I am on "bob@bob.bob"'s page
@@ -22,8 +22,12 @@ Feature: show contacts
     And I sign out
     And I sign in as "alice@alice.alice"
     And I am on "robert@grimm.grimm"'s page
-    And I press the first "a" within ".section.contact_pictures"
-    Then I should see "Bob Jones"
+    Then I should see "Contacts" within "#profile-horizontal-bar"
+
+    When I press the first "#contacts_link"
+    Then I should see "Bob Jones" within "#people_stream .media-body"
+    When I add the person to my "Besties" aspect within "#people_stream"
+    Then I should see a flash message containing "You have started sharing with Bob Jones!"
 
   Scenario: don't see contacts of an invisible aspect list
     When I am on "bob@bob.bob"'s page
@@ -35,4 +39,4 @@ Feature: show contacts
 
     And I sign in as "alice@alice.alice"
     And I am on "robert@grimm.grimm"'s page
-    Then I should not see "Contacts" within "#profile_information"
+    Then I should not see "Contacts" within "#profile-horizontal-bar"

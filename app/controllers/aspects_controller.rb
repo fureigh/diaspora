@@ -11,47 +11,36 @@ class AspectsController < ApplicationController
 
   def create
     @aspect = current_user.aspects.build(aspect_params)
-    aspecting_person_id = params[:aspect][:person_id]
+    aspecting_person_id = params[:person_id]
 
     if @aspect.save
-      flash[:notice] = I18n.t('aspects.create.success', :name => @aspect.name)
-
-      if current_user.getting_started || request.referer.include?("contacts")
-        redirect_to :back
-      elsif aspecting_person_id.present?
-        connect_person_to_aspect(aspecting_person_id)
-      else
-        redirect_to contacts_path(:a_id => @aspect.id)
+      result = {id: @aspect.id, name: @aspect.name}
+      if aspecting_person_id.present?
+        aspect_membership = connect_person_to_aspect(aspecting_person_id)
+        result[:aspect_membership] = AspectMembershipPresenter.new(aspect_membership).base_hash if aspect_membership
       end
+
+      render json: result
     else
-      respond_to do |format|
-        format.js { render :text => I18n.t('aspects.create.failure'), :status => 422 }
-        format.html do
-          flash[:error] = I18n.t('aspects.create.failure')
-          redirect_to :back
-        end
-      end
-    end
-  end
-
-  def new
-    @aspect = Aspect.new
-    @person_id = params[:person_id]
-    @remote = params[:remote] == "true"
-    respond_to do |format|
-      format.html { render :layout => false }
+      render nothing: true, status: 422
     end
   end
 
   def destroy
-    @aspect = current_user.aspects.where(:id => params[:id]).first
+    @aspect = current_user.aspects.where(id: params[:id]).first
 
     begin
+      if current_user.auto_follow_back && @aspect.id == current_user.auto_follow_back_aspect.id
+        current_user.update(auto_follow_back: false, auto_follow_back_aspect: nil)
+        flash[:notice] = I18n.t "aspects.destroy.success_auto_follow_back", name: @aspect.name
+      else
+        flash[:notice] = I18n.t "aspects.destroy.success", name: @aspect.name
+      end
       @aspect.destroy
-      flash[:notice] = I18n.t 'aspects.destroy.success', :name => @aspect.name
     rescue ActiveRecord::StatementInvalid => e
-      flash[:error] = I18n.t 'aspects.destroy.failure', :name => @aspect.name
+      flash[:error] = I18n.t "aspects.destroy.failure", name: @aspect.name
     end
+
     if request.referer.include?('contacts')
       redirect_to contacts_path
     else
@@ -78,6 +67,21 @@ class AspectsController < ApplicationController
     render :json => { :id => @aspect.id, :name => @aspect.name }
   end
 
+  def update_order
+    params[:ordered_aspect_ids].each_with_index do |id, i|
+      current_user.aspects.find(id).update_attributes(order_id: i)
+    end
+    render nothing: true
+  end
+
+  def toggle_chat_privilege
+    @aspect = current_user.aspects.where(:id => params[:aspect_id]).first
+
+    @aspect.chat_enabled = !@aspect.chat_enabled
+    @aspect.save
+    render :nothing => true
+  end
+
   def toggle_contact_visibility
     @aspect = current_user.aspects.where(:id => params[:aspect_id]).first
 
@@ -95,13 +99,14 @@ class AspectsController < ApplicationController
   def connect_person_to_aspect(aspecting_person_id)
     @person = Person.find(aspecting_person_id)
     if @contact = current_user.contact_for(@person)
-      @contact.aspects << @aspect
+      @contact.aspect_memberships.create(aspect: @aspect)
     else
       @contact = current_user.share_with(@person, @aspect)
+      @contact.aspect_memberships.first
     end
   end
 
   def aspect_params
-    params.require(:aspect).permit(:name, :contacts_visible, :order_id)
+    params.require(:aspect).permit(:name, :contacts_visible, :chat_enabled, :order_id)
   end
 end

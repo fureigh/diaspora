@@ -9,7 +9,7 @@ describe LikesController, :type => :controller do
     @alices_aspect = alice.aspects.where(:name => "generic").first
     @bobs_aspect = bob.aspects.where(:name => "generic").first
 
-    sign_in :user, alice
+    sign_in(alice, scope: :user)
   end
 
   [Comment, Post].each do |class_const|
@@ -72,18 +72,33 @@ describe LikesController, :type => :controller do
             expect(response.code).to eq('422')
           end
         end
+
+        context "when an the exception is raised" do
+          before do
+            @target = alice.post :status_message, :text => "AWESOME", :to => @alices_aspect.id
+            @target = alice.comment!(@target, "hey") if class_const == Comment
+          end
+
+          it "should be catched when it means that the target is not found" do
+            params = like_hash.merge(format: :json, id_field => -1)
+            post :create, params
+            expect(response.code).to eq('422')
+          end
+
+          it "should not be catched when it is unexpected" do
+            @target = alice.post :status_message, :text => "AWESOME", :to => @alices_aspect.id
+            @target = alice.comment!(@target, "hey") if class_const == Comment
+            allow(alice).to receive(:like!).and_raise("something")
+            allow(@controller).to receive(:current_user).and_return(alice)
+            expect { post :create, like_hash.merge(:format => :json) }.to raise_error("something")
+          end
+        end
       end
 
       describe '#index' do
         before do
           @message = alice.post(:status_message, :text => "hey", :to => @alices_aspect.id)
           @message = alice.comment!(@message, "hey") if class_const == Comment
-        end
-
-        it 'generates a jasmine fixture', :fixture => true do
-          get :index, id_field => @message.id
-
-          save_fixture(response.body, "ajax_likes_on_#{class_const.to_s.underscore}")
         end
 
         it 'returns a 404 for a post not visible to the user' do

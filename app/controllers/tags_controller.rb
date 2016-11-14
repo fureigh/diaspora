@@ -3,13 +3,11 @@
 #   the COPYRIGHT file.
 
 class TagsController < ApplicationController
-  skip_before_action :set_grammatical_gender
   before_action :ensure_page, :only => :show
 
-  layout ->(c) { request.format == :mobile ? "application" : "with_header_with_footer" }, :only => [:show]
-  use_bootstrap_for :show
-
   helper_method :tag_followed?
+
+  layout proc { request.format == :mobile ? "application" : "with_header" }, only: :show
 
   respond_to :html, :only => [:show]
   respond_to :json, :only => [:index, :show]
@@ -38,9 +36,15 @@ class TagsController < ApplicationController
     if user_signed_in?
       gon.preloads[:tagFollowings] = tags
     end
-    @stream = Stream::Tag.new(current_user, params[:name], :max_time => max_time, :page => params[:page])
+    stream = Stream::Tag.new(current_user, params[:name], max_time: max_time, page: params[:page])
+    @stream = TagStreamPresenter.new(stream)
     respond_with do |format|
-      format.json { render :json => @stream.stream_posts.map { |p| LastThreeCommentsDecorator.new(PostPresenter.new(p, current_user)) }}
+      format.json do
+        posts = stream.stream_posts.map do |p|
+          LastThreeCommentsDecorator.new(PostPresenter.new(p, current_user))
+        end
+        render json: posts
+      end
     end
   end
 

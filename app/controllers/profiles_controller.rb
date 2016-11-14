@@ -4,9 +4,6 @@
 
 class ProfilesController < ApplicationController
   before_action :authenticate_user!, :except => ['show']
-  before_action -> { @css_framework = :bootstrap }, only: [:show, :edit]
- 
-  layout ->(c) { request.format == :mobile ? "application" : "with_header_with_footer" }, only: [:show, :edit]
 
   respond_to :html, :except => [:show]
   respond_to :js, :only => :update
@@ -26,23 +23,19 @@ class ProfilesController < ApplicationController
     @aspect  = :person_edit
     @profile = @person.profile
 
-    @tags = @profile.tags
-    @tags_array = []
-    @tags.each do |obj| 
-      @tags_array << { :name => ("#"+obj.name),
-        :value => ("#"+obj.name)}
-      end
+    gon.preloads[:tagsArray] = @profile.tags.map {|tag| {name: "##{tag.name}", value: "##{tag.name}"} }
   end
 
   def update
     # upload and set new profile photo
     @profile_attrs = profile_params
-    
+
     munge_tag_string
 
     #checkbox tags wtf
     @profile_attrs[:searchable] ||= false
     @profile_attrs[:nsfw] ||= false
+    @profile_attrs[:public_details] ||= false
 
     if params[:photo_id]
       @profile_attrs[:photo] = Photo.where(:author_id => current_user.person_id, :id => params[:photo_id]).first
@@ -57,7 +50,6 @@ class ProfilesController < ApplicationController
     respond_to do |format|
       format.js { render :nothing => true, :status => 200 }
       format.any {
-        flash[:notice] = I18n.t 'profiles.update.updated'
         if current_user.getting_started?
           redirect_to getting_started_path
         else
@@ -83,6 +75,8 @@ class ProfilesController < ApplicationController
   end
 
   def profile_params
-    params.require(:profile).permit(:first_name, :last_name, :gender, :bio, :location, :searchable, :tag_string, :nsfw, :date => [:year, :month, :day]) || {}
+    params.require(:profile).permit(:first_name, :last_name, :gender, :bio,
+                                    :location, :searchable, :tag_string, :nsfw,
+                                    :public_details, date: %i(year month day)) || {}
   end
 end
